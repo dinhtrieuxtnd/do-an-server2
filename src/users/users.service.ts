@@ -26,6 +26,7 @@ export class UsersService {
         throw new BadRequestException('Mật khẩu hiện tại không đúng')
     }
 
+    
     const newHash = await this.hashingService.hash(body.newPassword)
     await this.sharedUserRepo.update({ id: user.id }, { passwordHash: newHash })
 

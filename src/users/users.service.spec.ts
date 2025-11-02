@@ -71,6 +71,7 @@ describe('UsersService - changePassword', () => {
       confirmPassword: 'newpass123',
     } as any)
 
+    
     expect(hashingService.compare).toHaveBeenCalledWith('oldpass', 'hash:old')
     expect(hashingService.hash).toHaveBeenCalledWith('newpass123')
     expect(sharedUserRepo.update).toHaveBeenCalledWith({ id: 7 }, { passwordHash: 'hash:new' })
