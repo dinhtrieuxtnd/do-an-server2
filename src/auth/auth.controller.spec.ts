@@ -11,6 +11,8 @@ describe('AuthController', () => {
 
     const mockAuthService = {
         register: jest.fn(),
+        forgotPassword: jest.fn(),
+        confirmResetOtp: jest.fn(),
     }
 
     beforeEach(async () => {
@@ -128,16 +130,10 @@ describe('AuthController', () => {
         })
 
         it('should throw UnprocessableEntityException when email already exists', async () => {
-            mockAuthService.register.mockRejectedValue(
-                new UnprocessableEntityException('Email đã được sử dụng'),
-            )
+            mockAuthService.register.mockRejectedValue(new UnprocessableEntityException('Email đã được sử dụng'))
 
-            await expect(controller.register(validRegisterDto)).rejects.toThrow(
-                UnprocessableEntityException,
-            )
-            await expect(controller.register(validRegisterDto)).rejects.toThrow(
-                'Email đã được sử dụng',
-            )
+            await expect(controller.register(validRegisterDto)).rejects.toThrow(UnprocessableEntityException)
+            await expect(controller.register(validRegisterDto)).rejects.toThrow('Email đã được sử dụng')
             expect(authService.register).toHaveBeenCalledWith(validRegisterDto)
         })
 
@@ -208,6 +204,122 @@ describe('AuthController', () => {
             expect(result).toHaveProperty('updatedAt')
             expect(result.createdAt).toBeInstanceOf(Date)
             expect(result.updatedAt).toBeInstanceOf(Date)
+        })
+    })
+
+    describe('forgot-password (OTP)', () => {
+        const validEmail = 'user@example.com'
+        const successMessage = { message: 'Nếu email tồn tại trong hệ thống, mã OTP đã được gửi.' }
+
+        it('should successfully process forgot password request', async () => {
+            mockAuthService.forgotPassword.mockResolvedValue(successMessage)
+
+            const result = await controller.forgotPassword({ email: validEmail })
+
+            expect(authService.forgotPassword).toHaveBeenCalledWith({ email: validEmail })
+            expect(result).toEqual(successMessage)
+        })
+
+        it('should handle invalid email format', async () => {
+            const invalidEmail = 'invalid-email'
+            mockAuthService.forgotPassword.mockRejectedValue(new UnprocessableEntityException('Email không hợp lệ'))
+
+            await expect(controller.forgotPassword({ email: invalidEmail })).rejects.toThrow(
+                UnprocessableEntityException,
+            )
+        })
+
+        it('should return same message even if email does not exist', async () => {
+            const nonExistentEmail = 'nonexistent@example.com'
+            mockAuthService.forgotPassword.mockResolvedValue(successMessage)
+
+            const result = await controller.forgotPassword({ email: nonExistentEmail })
+
+            expect(result).toEqual(successMessage)
+            expect(authService.forgotPassword).toHaveBeenCalledWith({ email: nonExistentEmail })
+        })
+
+        it('should handle service errors gracefully', async () => {
+            const error = new Error('Service unavailable')
+            mockAuthService.forgotPassword.mockRejectedValue(error)
+
+            await expect(controller.forgotPassword({ email: validEmail })).rejects.toThrow(error)
+        })
+    })
+
+    describe('reset-password', () => {
+        const validResetData = {
+            email: 'user@example.com',
+            code: '123456',
+            newPassword: 'NewP@ss123',
+            confirmPassword: 'NewP@ss123',
+        }
+        const successMessage = { message: 'Đổi mật khẩu thành công' }
+
+        it('should successfully reset password with valid data', async () => {
+            mockAuthService.confirmResetOtp.mockResolvedValue(successMessage)
+
+            const result = await controller.confirmResetOtp(validResetData)
+
+            expect(authService.confirmResetOtp).toHaveBeenCalledWith(validResetData)
+            expect(result).toEqual(successMessage)
+        })
+
+        it('should throw error when OTP code is invalid', async () => {
+            const invalidOtpData = { ...validResetData, code: '000000' }
+            mockAuthService.confirmResetOtp.mockRejectedValue(
+                new UnprocessableEntityException('Mã OTP không hợp lệ hoặc đã hết hạn'),
+            )
+
+            await expect(controller.confirmResetOtp(invalidOtpData)).rejects.toThrow(UnprocessableEntityException)
+        })
+
+        it('should throw error when passwords do not match', async () => {
+            const mismatchedPasswords = {
+                ...validResetData,
+                confirmPassword: 'DifferentP@ss123',
+            }
+            mockAuthService.confirmResetOtp.mockRejectedValue(
+                new UnprocessableEntityException('Mật khẩu xác nhận không khớp'),
+            )
+
+            await expect(controller.confirmResetOtp(mismatchedPasswords)).rejects.toThrow(UnprocessableEntityException)
+        })
+
+        it('should throw error when new password is too weak', async () => {
+            const weakPasswordData = {
+                ...validResetData,
+                newPassword: '123',
+                confirmPassword: '123',
+            }
+            mockAuthService.confirmResetOtp.mockRejectedValue(
+                new UnprocessableEntityException('Mật khẩu phải có ít nhất 6 ký tự'),
+            )
+
+            await expect(controller.confirmResetOtp(weakPasswordData)).rejects.toThrow(UnprocessableEntityException)
+        })
+
+        it('should throw error when email is invalid', async () => {
+            const invalidEmailData = {
+                ...validResetData,
+                email: 'invalid-email',
+            }
+            mockAuthService.confirmResetOtp.mockRejectedValue(new UnprocessableEntityException('Email không hợp lệ'))
+
+            await expect(controller.confirmResetOtp(invalidEmailData)).rejects.toThrow(UnprocessableEntityException)
+        })
+
+        it('should handle expired OTP code', async () => {
+            mockAuthService.confirmResetOtp.mockRejectedValue(new UnprocessableEntityException('Mã OTP đã hết hạn'))
+
+            await expect(controller.confirmResetOtp(validResetData)).rejects.toThrow(UnprocessableEntityException)
+        })
+
+        it('should handle service errors during reset', async () => {
+            const error = new Error('Service unavailable')
+            mockAuthService.confirmResetOtp.mockRejectedValue(error)
+
+            await expect(controller.confirmResetOtp(validResetData)).rejects.toThrow(error)
         })
     })
 })

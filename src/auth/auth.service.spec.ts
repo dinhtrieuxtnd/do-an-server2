@@ -3,17 +3,30 @@ import { AuthService } from './auth.service'
 import { AuthRepo } from './auth.repo'
 import { HashingService } from 'src/shared/services/hashing.service'
 import { SharedUserRepo } from 'src/shared/repos/shared-user.repo'
-import { UnprocessableEntityException } from '@nestjs/common'
+import { BadRequestException, UnprocessableEntityException } from '@nestjs/common'
 import { RegisterReqDto } from './auth.dto'
+import { EmailService } from 'src/shared/services/email.service'
+
+function mockDateNow(ts: number) {
+    const real = Date.now
+    jest.spyOn(Date, 'now').mockImplementation(() => ts)
+    return () => (Date.now as any).mockImplementation(real)
+}
 
 describe('AuthService', () => {
     let service: AuthService
     let authRepo: AuthRepo
     let hashingService: HashingService
     let sharedUserRepo: SharedUserRepo
+    let emailService: EmailService
 
     const mockAuthRepo = {
         createUser: jest.fn(),
+        createOtp: jest.fn(),
+        findValidOtpByEmailAndHash: jest.fn(),
+        findLatestOtpByEmail: jest.fn(),
+        deleteOtpById: jest.fn(),
+        deleteExpiredOtpByEmail: jest.fn(async () => {}),
     }
 
     const mockHashingService = {
@@ -25,6 +38,10 @@ describe('AuthService', () => {
         findUnique: jest.fn(),
         createUser: jest.fn(),
         update: jest.fn(),
+    }
+
+    const mockEmailService = {
+        sendEmail: jest.fn(),
     }
 
     beforeEach(async () => {
@@ -43,6 +60,10 @@ describe('AuthService', () => {
                     provide: SharedUserRepo,
                     useValue: mockSharedUserRepo,
                 },
+                { 
+                    provide: EmailService, 
+                    useValue: mockEmailService 
+                },
             ],
         }).compile()
 
@@ -50,10 +71,12 @@ describe('AuthService', () => {
         authRepo = module.get<AuthRepo>(AuthRepo)
         hashingService = module.get<HashingService>(HashingService)
         sharedUserRepo = module.get<SharedUserRepo>(SharedUserRepo)
+        emailService = module.get<EmailService>(EmailService)
     })
 
     afterEach(() => {
         jest.clearAllMocks()
+        jest.restoreAllMocks()
     })
 
     it('should be defined', () => {
@@ -517,6 +540,100 @@ describe('AuthService', () => {
 
             expect(result.createdAt).toEqual(now)
             expect(result.updatedAt).toEqual(now)
+        })
+    })
+
+    
+    describe('forgotPassword (OTP)', () => {
+        it('returns generic and does nothing if user not found', async () => {
+            mockSharedUserRepo.findUnique.mockResolvedValue(null)
+
+            const res = await service.forgotPassword({ email: 'none@example.com' } as any)
+
+            expect(res).toEqual({ message: expect.any(String) })
+            expect(authRepo.createOtp).not.toHaveBeenCalled()
+            expect(emailService.sendEmail).not.toHaveBeenCalled()
+        })
+
+        it('creates OTP and sends email when user exists', async () => {
+            mockSharedUserRepo.findUnique.mockResolvedValue({ id: 1, email: 'u@x.com', fullName: 'U' } as any)
+            mockAuthRepo.findLatestOtpByEmail.mockResolvedValue(null) // no rate-limit block
+
+            const undo = mockDateNow(1_700_000_000_000)
+            const res = await service.forgotPassword({ email: 'u@x.com' } as any)
+            undo()
+
+            expect(authRepo.createOtp).toHaveBeenCalledWith(
+                'u@x.com',
+                expect.any(String), // sha256 hex
+                expect.any(Date),
+            )
+            expect(emailService.sendEmail).toHaveBeenCalledWith({
+                email: 'u@x.com',
+                subject: expect.any(String),
+                content: expect.stringContaining('OTP'),
+            })
+            expect(res).toEqual({ message: expect.any(String) })
+        })
+
+        it('rate-limits resend within window', async () => {
+            mockSharedUserRepo.findUnique.mockResolvedValue({ id: 2, email: 'u2@x.com', fullName: 'U2' } as any)
+            mockAuthRepo.findLatestOtpByEmail.mockResolvedValue({ createdAt: new Date() } as any)
+
+            const res = await service.forgotPassword({ email: 'u2@x.com' } as any)
+
+            expect(emailService.sendEmail).not.toHaveBeenCalled()
+            expect(authRepo.createOtp).not.toHaveBeenCalled()
+            expect(res).toEqual({ message: expect.any(String) })
+        })
+    })
+
+    
+    describe('reset password ', () => {
+        it('throws 400 if user not found by email', async () => {
+            mockSharedUserRepo.findUnique.mockResolvedValue(null)
+
+            await expect(
+                service.confirmResetOtp({
+                    email: 'none@x.com',
+                    code: '123456',
+                    newPassword: 'pass123',
+                    confirmPassword: 'pass123',
+                } as any),
+            ).rejects.toBeInstanceOf(BadRequestException)
+        })
+
+        it('throws 400 if OTP not valid (wrong or expired)', async () => {
+            mockSharedUserRepo.findUnique.mockResolvedValue({ id: 5, email: 'u@x.com' } as any)
+            mockAuthRepo.findValidOtpByEmailAndHash.mockResolvedValue(null)
+
+            await expect(
+                service.confirmResetOtp({
+                    email: 'u@x.com',
+                    code: '000000',
+                    newPassword: 'pass123',
+                    confirmPassword: 'pass123',
+                } as any),
+            ).rejects.toBeInstanceOf(BadRequestException)
+        })
+
+        it('consumes OTP and updates password on success', async () => {
+            mockSharedUserRepo.findUnique.mockResolvedValue({ id: 6, email: 'u@x.com' } as any)
+            mockAuthRepo.findValidOtpByEmailAndHash.mockResolvedValue({ id: 99 } as any)
+            mockHashingService.hash.mockResolvedValue('hashed:pass123')
+
+            const res = await service.confirmResetOtp({
+                email: 'u@x.com',
+                code: '123456',
+                newPassword: 'pass123',
+                confirmPassword: 'pass123',
+            } as any)
+
+            expect(authRepo.deleteOtpById).toHaveBeenCalledWith(99)
+            expect(hashingService.hash).toHaveBeenCalledWith('pass123')
+            expect(sharedUserRepo.update).toHaveBeenCalledWith({ id: 6 }, { passwordHash: 'hashed:pass123' })
+            expect(authRepo.deleteExpiredOtpByEmail).toHaveBeenCalledWith('u@x.com')
+            expect(res).toEqual({ message: 'Đổi mật khẩu thành công' })
         })
     })
 })

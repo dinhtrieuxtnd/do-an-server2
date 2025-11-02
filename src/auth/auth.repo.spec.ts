@@ -13,6 +13,13 @@ describe('AuthRepo', () => {
             update: jest.fn(),
             delete: jest.fn(),
         },
+
+         otpRecord: {
+            create: jest.fn(),
+            findFirst: jest.fn(),
+            delete: jest.fn(),
+            deleteMany: jest.fn(),
+        },
     }
 
     beforeEach(async () => {
@@ -416,6 +423,130 @@ describe('AuthRepo', () => {
                 },
             })
             expect(result.phone).toBe('')
+        })
+    })
+    
+     describe('OTP methods', () => {
+        describe('createOtp', () => {
+            it('should call prisma.otpRecord.create with correct payload', async () => {
+                const email = 'u@ex.com'
+                const otpHash = 'hash123'
+                const expiresAt = new Date(Date.now() + 60_000)
+
+                const created = { id: 10, email, createdAt: new Date(), expiresAt }
+                mockPrismaService.otpRecord.create.mockResolvedValue(created)
+
+                const result = await (repo as any).createOtp(email, otpHash, expiresAt)
+
+                expect(prismaService.otpRecord.create).toHaveBeenCalledTimes(1)
+                const arg = mockPrismaService.otpRecord.create.mock.calls[0][0]
+                expect(arg).toHaveProperty('data')
+                expect(arg.data).toEqual(expect.objectContaining({ email, expiresAt }))
+                // đảm bảo giá trị otpHash có được truyền vào một field nào đó
+                const hasHash = Object.values(arg.data).some(v => v === otpHash)
+                expect(hasHash).toBe(true)
+
+                expect(result).toBe(created)
+            })
+        })
+
+        describe('findValidOtpByEmailAndHash', () => {
+            beforeEach(() => {
+                jest.useFakeTimers().setSystemTime(new Date('2025-01-01T00:00:00Z'))
+            })
+
+            it('should query with email, otpHash in where and expiresAt > now, order by createdAt desc', async () => {
+                const email = 'u@ex.com'
+                const otpHash = 'hash123'
+                const record = {
+                    id: 11,
+                    email,
+                    createdAt: new Date('2025-01-01T00:00:10Z'),
+                    expiresAt: new Date('2025-01-01T00:01:00Z'),
+                }
+                mockPrismaService.otpRecord.findFirst.mockResolvedValue(record)
+
+                const result = await (repo as any).findValidOtpByEmailAndHash(email, otpHash)
+
+                expect(prismaService.otpRecord.findFirst).toHaveBeenCalledTimes(1)
+                const arg = mockPrismaService.otpRecord.findFirst.mock.calls[0][0]
+
+                expect(arg).toHaveProperty('where')
+                expect(arg.where).toHaveProperty('email', email)
+                expect(arg.where).toHaveProperty('expiresAt')
+                expect(arg.where.expiresAt).toHaveProperty('gt')
+                expect(arg.where.expiresAt.gt instanceof Date).toBe(true)
+
+                // linh hoạt tên field của otpHash
+                expect(JSON.stringify(arg.where)).toContain(otpHash)
+
+                expect(arg).toHaveProperty('orderBy', { createdAt: 'desc' })
+                expect(result).toBe(record)
+            })
+
+            it('should return null when not found', async () => {
+                mockPrismaService.otpRecord.findFirst.mockResolvedValue(null)
+
+                const result = await (repo as any).findValidOtpByEmailAndHash('u@ex.com', 'x')
+
+                expect(result).toBeNull()
+            })
+        })
+
+        describe('findLatestOtpByEmail', () => {
+            it('should get latest otp by email', async () => {
+                const email = 'u@ex.com'
+                const latest = { id: 22, email, createdAt: new Date() }
+                mockPrismaService.otpRecord.findFirst.mockResolvedValue(latest)
+
+                const result = await (repo as any).findLatestOtpByEmail(email)
+
+                expect(prismaService.otpRecord.findFirst).toHaveBeenCalledWith({
+                    where: { email },
+                    orderBy: { createdAt: 'desc' },
+                })
+                expect(result).toBe(latest)
+            })
+        })
+
+        describe('deleteOtpById', () => {
+            it('should delete by number id', async () => {
+                mockPrismaService.otpRecord.delete.mockResolvedValue({ id: 5 })
+
+                await (repo as any).deleteOtpById(5)
+
+                expect(prismaService.otpRecord.delete).toHaveBeenCalledWith({
+                    where: { id: 5 },
+                })
+            })
+
+            it('should delete by bigint id (converted to number)', async () => {
+                mockPrismaService.otpRecord.delete.mockResolvedValue({ id: 10 })
+
+                await (repo as any).deleteOtpById(10n)
+
+                expect(prismaService.otpRecord.delete).toHaveBeenCalledWith({
+                    where: { id: 10 },
+                })
+            })
+        })
+
+        describe('deleteExpiredOtpByEmail', () => {
+            beforeEach(() => {
+                jest.useFakeTimers().setSystemTime(new Date('2025-01-01T00:00:00Z'))
+            })
+
+            it('should delete all expired otp by email (expiresAt <= now)', async () => {
+                mockPrismaService.otpRecord.deleteMany.mockResolvedValue({ count: 3 })
+
+                const result = await (repo as any).deleteExpiredOtpByEmail('u@ex.com')
+
+                expect(prismaService.otpRecord.deleteMany).toHaveBeenCalledTimes(1)
+                expect(prismaService.otpRecord.deleteMany).toHaveBeenCalledWith({
+                    where: { email: 'u@ex.com', expiresAt: { lte: expect.any(Date) } },
+                })
+                expect(result).toEqual({ count: 3 })
+            })
         })
     })
 })
