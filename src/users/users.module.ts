@@ -7,6 +7,7 @@ import { SharedModule } from 'src/shared/shared.module'
   imports: [SharedModule],
   controllers: [UsersController],
   providers: [UsersService],
+  
 })
 
 export class UsersModule {}
