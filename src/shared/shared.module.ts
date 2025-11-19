@@ -12,6 +12,7 @@ import { SharedClrStdRepo } from './repos/shared-clrstd.repo'
 import { SharedJreqRepo } from './repos/shared-join-req.repo'
 import { SharedMediaRepo } from './repos/shared-media.repo'
 import { SharedLessonRepo } from './repos/shared-lesson.repo'
+import { ActivityLogService } from './services/activity-log.service'
 
 const sharedServices = [
     PrismaService,
@@ -25,13 +26,19 @@ const sharedServices = [
     SharedJreqRepo,
     SharedClrStdRepo,
     SharedMediaRepo,
-    SharedLessonRepo
+    SharedLessonRepo,
+    
 ]
 
 @Global()
 @Module({
     imports: [JwtModule],
-    providers: sharedServices,
-    exports: sharedServices,
+    providers: [...sharedServices,
+        {
+            provide: 'IActivityLogService',
+            useClass: ActivityLogService,
+        }
+    ],
+    exports: [...sharedServices, 'IActivityLogService'],
 })
 export class SharedModule {}
