@@ -21,6 +21,8 @@ import { QuizModule } from './routes/quiz/quiz.module';
 import { LessonModule } from './routes/lesson/lesson.module';
 import { ExerciseSubmissionModule } from './routes/exercise-submission/exercise-submission.module';
 import { QuizAttemptModule } from './routes/quiz-attempt/quiz-attempt.module';
+import { ReportModule } from './routes/report/report.module'
+import { ActivityLogInterceptor } from './shared/interceptors/activity-log.interceptor'
 
 @Module({
     imports: [
@@ -43,6 +45,7 @@ import { QuizAttemptModule } from './routes/quiz-attempt/quiz-attempt.module';
         LessonModule,
         ExerciseSubmissionModule,
         QuizAttemptModule,
+        ReportModule
     ],
     controllers: [AppController],
     providers: [
@@ -58,6 +61,10 @@ import { QuizAttemptModule } from './routes/quiz-attempt/quiz-attempt.module';
         {
             provide: APP_INTERCEPTOR,
             useClass: ZodSerializerInterceptor,
+        },
+        {
+            provide: APP_INTERCEPTOR,
+            useClass: ActivityLogInterceptor
         },
         {
             provide: APP_GUARD,
