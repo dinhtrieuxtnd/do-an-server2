@@ -24,11 +24,8 @@ pipeline {
                 echo 'Installing dependencies...'
                 script {
                     if (isUnix()) {
-                        // Install build tools for native modules (better-sqlite3)
-                        sh '''
-                            apt-get update && apt-get install -y python3 make g++ || true
-                            npm ci
-                        '''
+                        // Install npm dependencies
+                        sh 'npm ci'
                     } else {
                         bat 'npm ci'
                     }
