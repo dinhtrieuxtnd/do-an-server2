@@ -167,8 +167,18 @@ pipeline {
             steps {
                 echo 'Logging in to Docker Registry...'
                 script {
-                    docker.withRegistry("http://${DOCKER_REGISTRY}", "${DOCKER_REGISTRY_CREDENTIALS}") {
-                        echo 'Successfully logged in to Docker Registry'
+                    withCredentials([usernamePassword(credentialsId: "${DOCKER_REGISTRY_CREDENTIALS}", 
+                                                      usernameVariable: 'REGISTRY_USER', 
+                                                      passwordVariable: 'REGISTRY_PASS')]) {
+                        if (isUnix()) {
+                            sh """
+                                echo \$REGISTRY_PASS | docker login ${DOCKER_REGISTRY} -u \$REGISTRY_USER --password-stdin
+                            """
+                        } else {
+                            bat """
+                                echo %REGISTRY_PASS% | docker login ${DOCKER_REGISTRY} -u %REGISTRY_USER% --password-stdin
+                            """
+                        }
                     }
                 }
             }
@@ -178,10 +188,18 @@ pipeline {
             steps {
                 echo 'Pushing Docker image to Docker Registry...'
                 script {
-                    docker.withRegistry("http://${DOCKER_REGISTRY}", "${DOCKER_REGISTRY_CREDENTIALS}") {
-                        dockerImage.push("${DOCKER_TAG}")
-                        dockerImage.push("latest")
-                        echo "Successfully pushed ${DOCKER_IMAGE}:${DOCKER_TAG} and ${DOCKER_IMAGE}:latest"
+                    if (isUnix()) {
+                        sh """
+                            docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+                            docker push ${DOCKER_IMAGE}:latest
+                            echo "Successfully pushed ${DOCKER_IMAGE}:${DOCKER_TAG} and ${DOCKER_IMAGE}:latest"
+                        """
+                    } else {
+                        bat """
+                            docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+                            docker push ${DOCKER_IMAGE}:latest
+                            echo "Successfully pushed ${DOCKER_IMAGE}:${DOCKER_TAG} and ${DOCKER_IMAGE}:latest"
+                        """
                     }
                 }
             }
