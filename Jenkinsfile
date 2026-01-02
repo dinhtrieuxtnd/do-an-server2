@@ -2,13 +2,20 @@ pipeline {
     agent any
     
     environment {
-        DOCKER_HUB_USERNAME = 'dinhtrieuxtnd'
-        DOCKER_IMAGE = "${DOCKER_HUB_USERNAME}/do-an-server"
+        // Private Docker Registry Configuration
+        DOCKER_REGISTRY = 'localhost:5000'  // Địa chỉ registry riêng
+        DOCKER_IMAGE = "${DOCKER_REGISTRY}/do-an-server"
         DOCKER_TAG = "${BUILD_NUMBER}"
-        DOCKER_HUB_CREDENTIALS = 'dockerhub-credentials'
+        DOCKER_REGISTRY_CREDENTIALS = 'docker-registry-credentials'
         NODE_VERSION = '22'
         // Dummy DATABASE_URL cho prisma generate và build (không cần connect thực sự)
         DATABASE_URL = 'postgresql://dummy:dummy@localhost:5432/dummy'
+        
+        // SSH Deployment Configuration
+        SSH_CREDENTIALS = 'ssh-deployment-key'
+        DEPLOYMENT_HOST = '192.168.0.102'  // Thay bằng IP máy deployment của bạn
+        DEPLOYMENT_USER = 'deployment-user'  // Thay bằng username deployment
+        DEPLOY_PATH = 'C:\\deployment\\do-an-server2'
     }
     
     stages {
@@ -117,12 +124,12 @@ pipeline {
                     }
                     
                     if (testExitCode == 0) {
-                        echo '✅ All tests passed!'
+                        echo 'All tests passed!'
                     } else if (testExitCode == 1) {
-                        echo '⚠️ Some tests failed, but continuing build...'
+                        echo 'Some tests failed, but continuing build...'
                         currentBuild.result = 'UNSTABLE'
                     } else {
-                        echo "⚠️ Test command exited with code ${testExitCode}"
+                        echo "Test command exited with code ${testExitCode}"
                         // Don't fail the build for forceExit warnings
                         currentBuild.result = 'UNSTABLE'
                     }
@@ -153,22 +160,22 @@ pipeline {
             }
         }
         
-        stage('Login to Docker Hub') {
+        stage('Login to Docker Registry') {
             steps {
-                echo 'Logging in to Docker Hub...'
+                echo 'Logging in to Docker Registry...'
                 script {
-                    docker.withRegistry('https://registry.hub.docker.com', "${DOCKER_HUB_CREDENTIALS}") {
-                        echo 'Successfully logged in to Docker Hub'
+                    docker.withRegistry("http://${DOCKER_REGISTRY}", "${DOCKER_REGISTRY_CREDENTIALS}") {
+                        echo 'Successfully logged in to Docker Registry'
                     }
                 }
             }
         }
         
-        stage('Push to Docker Hub') {
+        stage('Push to Docker Registry') {
             steps {
-                echo 'Pushing Docker image to Docker Hub...'
+                echo 'Pushing Docker image to Docker Registry...'
                 script {
-                    docker.withRegistry('https://registry.hub.docker.com', "${DOCKER_HUB_CREDENTIALS}") {
+                    docker.withRegistry("http://${DOCKER_REGISTRY}", "${DOCKER_REGISTRY_CREDENTIALS}") {
                         dockerImage.push("${DOCKER_TAG}")
                         dockerImage.push("latest")
                         echo "Successfully pushed ${DOCKER_IMAGE}:${DOCKER_TAG} and ${DOCKER_IMAGE}:latest"
@@ -186,36 +193,77 @@ pipeline {
                 script {
                     if (isUnix()) {
                         sh '''
-                            docker-compose -f docker-compose.dev.yml down || true
-                            docker-compose -f docker-compose.dev.yml up -d
+                            docker compose -f docker-compose.dev.yml down || true
+                            docker compose -f docker-compose.dev.yml up -d
                         '''
                     } else {
                         bat '''
-                            docker-compose -f docker-compose.dev.yml down
-                            docker-compose -f docker-compose.dev.yml up -d
+                            docker compose -f docker-compose.dev.yml down
+                            docker compose -f docker-compose.dev.yml up -d
                         '''
                     }
                 }
             }
         }
         
-        stage('Deploy to Production') {
+        stage('Deploy to Production via SSH') {
             when {
                 branch 'main'
             }
             steps {
-                echo 'Deploying to production environment...'
+                echo 'Deploying to production server via SSH...'
+                echo "Target: ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST}:${DEPLOY_PATH}"
+                
                 script {
-                    if (isUnix()) {
-                        sh '''
-                            docker-compose -f docker-compose.prod.yml down || true
-                            docker-compose -f docker-compose.prod.yml up -d
-                        '''
-                    } else {
-                        bat '''
-                            docker-compose -f docker-compose.prod.yml down
-                            docker-compose -f docker-compose.prod.yml up -d
-                        '''
+                    // Sử dụng sshagent để authenticate với SSH key
+                    sshagent(credentials: [SSH_CREDENTIALS]) {
+                        if (isUnix()) {
+                            // Linux/Mac deployment
+                            sh """
+                                # Tạo thư mục deployment nếu chưa có
+                                ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} 'mkdir -p ${DEPLOY_PATH}'
+                                
+                                # Copy docker-compose file và .env
+                                scp -o StrictHostKeyChecking=no docker-compose.prod.yml ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST}:${DEPLOY_PATH}/
+                                scp -o StrictHostKeyChecking=no .env.production ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST}:${DEPLOY_PATH}/.env
+                                
+                                # Deploy trên server
+                                ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} '
+                                    cd ${DEPLOY_PATH}
+                                    echo "Pulling latest images from registry..."
+                                    docker-compose -f docker-compose.prod.yml pull
+                                    echo "Stopping old containers..."
+                                    docker-compose -f docker-compose.prod.yml down
+                                    echo "Starting new containers..."
+                                    docker-compose -f docker-compose.prod.yml up -d
+                                    echo "Checking container status..."
+                                    docker-compose -f docker-compose.prod.yml ps
+                                    echo "Deployment completed!"
+                                '
+                            """
+                        } else {
+                            // Windows deployment
+                            bat """
+                                @echo off
+                                echo Creating deployment directory...
+                                ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "if not exist ${DEPLOY_PATH} mkdir ${DEPLOY_PATH}"
+                                
+                                echo Copying docker-compose file...
+                                scp -o StrictHostKeyChecking=no docker-compose.prod.yml ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST}:${DEPLOY_PATH}/
+                                
+                                echo Copying environment file...
+                                if exist .env.production (
+                                    scp -o StrictHostKeyChecking=no .env.production ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST}:${DEPLOY_PATH}/.env
+                                ) else (
+                                    echo Warning: .env.production not found, skipping...
+                                )
+                                
+                                echo Deploying on remote server...
+                                ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "cd ${DEPLOY_PATH} && docker-compose -f docker-compose.prod.yml pull && docker-compose -f docker-compose.prod.yml down && docker-compose -f docker-compose.prod.yml up -d && docker-compose -f docker-compose.prod.yml ps"
+                                
+                                echo Deployment completed!
+                            """
+                        }
                     }
                 }
             }
@@ -226,7 +274,8 @@ pipeline {
         success {
             echo 'Pipeline executed successfully!'
             echo "Docker Image: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-            echo "Docker Hub: https://hub.docker.com/r/${DOCKER_HUB_USERNAME}/do-an-server"
+            echo "Docker Registry: http://${DOCKER_REGISTRY}"
+            echo "View images at: http://localhost:8081 (Docker Registry UI)"
         }
         failure {
             echo 'Pipeline failed!'
