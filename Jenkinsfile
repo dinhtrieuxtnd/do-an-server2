@@ -258,7 +258,10 @@ pipeline {
                         string(credentialsId: 'prod-minio-endpoint', variable: 'MINIO_ENDPOINT'),
                         string(credentialsId: 'prod-minio-access-key', variable: 'MINIO_ACCESS_KEY'),
                         string(credentialsId: 'prod-minio-secret-key', variable: 'MINIO_SECRET_KEY'),
-                        string(credentialsId: 'prod-minio-bucket', variable: 'MINIO_BUCKET_NAME')
+                        string(credentialsId: 'prod-minio-bucket', variable: 'MINIO_BUCKET_NAME'),
+                        // Docker Registry
+                        string(credentialsId: 'docker-registry-user', variable: 'REGISTRY_USER'),
+                        string(credentialsId: 'docker-registry-pass', variable: 'REGISTRY_PASS')
                     ]) {
                         
                         // Sử dụng sshagent để authenticate với SSH key
