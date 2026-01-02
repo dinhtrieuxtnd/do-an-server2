@@ -15,7 +15,8 @@ pipeline {
         SSH_CREDENTIALS = 'ssh-deployment-key'
         DEPLOYMENT_HOST = '192.168.123.3'  // Thay bằng IP máy deployment của bạn
         DEPLOYMENT_USER = 'deployment-user'  // Thay bằng username deployment
-        DEPLOY_PATH = 'C:\\deployment\\do-an-server2'
+        DEPLOY_PATH = '/c/deployment/do-an-server2'  // Unix-style path cho SSH/SCP từ Linux
+        DEPLOY_PATH_WINDOWS = 'C:\\deployment\\do-an-server2'  // Windows path cho PowerShell commands
         
         // Production Environment Credentials
         PROD_ENV_CREDENTIALS = 'production-environment-variables'
@@ -263,19 +264,16 @@ pipeline {
                         // Sử dụng sshagent để authenticate với SSH key
                         sshagent(credentials: [SSH_CREDENTIALS]) {
                             if (isUnix()) {
-                                // Linux/Mac deployment
+                                // Linux/Mac deployment to Windows target
                                 sh """
-                                    # Tạo thư mục deployment nếu chưa có
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} 'mkdir -p ${DEPLOY_PATH}'
+                                    # Tạo thư mục deployment nếu chưa có (dùng PowerShell qua SSH)
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} 'powershell -Command "New-Item -ItemType Directory -Force -Path ${DEPLOY_PATH_WINDOWS}"'
                                     
-                                    # Copy docker-compose file
+                                    # Copy docker-compose file (dùng Unix-style path)
                                     scp -o StrictHostKeyChecking=no docker-compose.prod.yml ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST}:${DEPLOY_PATH}/
                                     
                                     # Tạo file .env trên server với credentials từ Jenkins
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} '
-                                        cd ${DEPLOY_PATH}
-                                        echo "Creating .env file with production credentials..."
-                                        cat > .env << EOL
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"\\\$envContent = @'
 # Database Configuration
 POSTGRES_HOST=${POSTGRES_HOST}
 POSTGRES_PORT=${POSTGRES_PORT}
@@ -304,23 +302,21 @@ MINIO_ENDPOINT=${MINIO_ENDPOINT}
 MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
 MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
 MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME}
-EOL
-                                        echo ".env file created successfully"
-                                    '
+'@; Set-Content -Path '${DEPLOY_PATH_WINDOWS}\\.env' -Value \\\$envContent; Write-Host '.env file created successfully'\\\"\"
                                     
                                     # Deploy trên server
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} '
-                                        cd ${DEPLOY_PATH}
-                                        echo "Pulling latest images from registry..."
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"
+                                        Set-Location ${DEPLOY_PATH_WINDOWS}
+                                        Write-Host 'Pulling latest images from registry...'
                                         docker compose -f docker-compose.prod.yml pull
-                                        echo "Stopping old containers..."
+                                        Write-Host 'Stopping old containers...'
                                         docker compose -f docker-compose.prod.yml down
-                                        echo "Starting new containers..."
+                                        Write-Host 'Starting new containers...'
                                         docker compose -f docker-compose.prod.yml up -d
-                                        echo "Checking container status..."
+                                        Write-Host 'Checking container status...'
                                         docker compose -f docker-compose.prod.yml ps
-                                        echo "Deployment completed!"
-                                    '
+                                        Write-Host 'Deployment completed!'
+                                    \\\"\"
                                 """
                             } else {
                                 // Windows deployment
