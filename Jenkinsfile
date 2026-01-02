@@ -317,7 +317,7 @@ EOF
                                     
                                     # Login to Docker Registry on deployment server
                                     echo "Logging in to Docker Registry on deployment server..."
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"\\\$env:DOCKER_HOST='tcp://localhost:2375'; echo '${REGISTRY_PASS}' | docker login ${DOCKER_REGISTRY_URL} -u ${REGISTRY_USER} --password-stdin\\\""
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"\\\$env:DOCKER_HOST='tcp://localhost:2375'; echo '${REGISTRY_PASS}' | docker login ${DOCKER_REGISTRY} -u ${REGISTRY_USER} --password-stdin\\\""
                                     
                                     # Deploy containers với DOCKER_HOST
                                     echo "Pulling latest images..."
