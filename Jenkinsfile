@@ -313,18 +313,18 @@ EOF
                                     # Clean up
                                     rm -f .env.prod
                                     
-                                    # Deploy containers
+                                    # Deploy containers với DOCKER_HOST
                                     echo "Pulling latest images..."
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"cd '${DEPLOY_PATH_WINDOWS}'; docker compose -f docker-compose.prod.yml pull\\\""
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"\\\$env:DOCKER_HOST='tcp://localhost:2375'; cd '${DEPLOY_PATH_WINDOWS}'; docker compose -f docker-compose.prod.yml pull\\\""
                                     
                                     echo "Stopping old containers..."
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"cd '${DEPLOY_PATH_WINDOWS}'; docker compose -f docker-compose.prod.yml down\\\""
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"\\\$env:DOCKER_HOST='tcp://localhost:2375'; cd '${DEPLOY_PATH_WINDOWS}'; docker compose -f docker-compose.prod.yml down\\\""
                                     
                                     echo "Starting new containers..."
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"cd '${DEPLOY_PATH_WINDOWS}'; docker compose -f docker-compose.prod.yml up -d\\\""
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"\\\$env:DOCKER_HOST='tcp://localhost:2375'; cd '${DEPLOY_PATH_WINDOWS}'; docker compose -f docker-compose.prod.yml up -d\\\""
                                     
                                     echo "Container status:"
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"cd '${DEPLOY_PATH_WINDOWS}'; docker compose -f docker-compose.prod.yml ps\\\""
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"\\\$env:DOCKER_HOST='tcp://localhost:2375'; cd '${DEPLOY_PATH_WINDOWS}'; docker compose -f docker-compose.prod.yml ps\\\""
                                     
                                     echo "Deployment completed!"
                                 """
