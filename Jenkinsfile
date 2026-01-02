@@ -269,11 +269,8 @@ pipeline {
                                     # Tạo thư mục deployment
                                     ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} 'powershell -Command "New-Item -ItemType Directory -Force -Path ${DEPLOY_PATH_WINDOWS}"'
                                     
-                                    # Copy docker-compose.yml qua PowerShell
-                                    cat docker-compose.prod.yml | ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} 'powershell -Command "\\\$content = \\\$input | Out-String; Set-Content -Path \\\"${DEPLOY_PATH_WINDOWS}\\\\docker-compose.prod.yml\\\" -Value \\\$content"'
-                                    
-                                    # Tạo file .env với các biến môi trường
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} 'powershell -Command "\\\$envContent = @\\\"
+                                    # Tạo file .env local
+                                    cat > .env.prod << 'EOF'
 # Database Configuration
 POSTGRES_HOST=${POSTGRES_HOST}
 POSTGRES_PORT=${POSTGRES_PORT}
@@ -302,20 +299,32 @@ MINIO_ENDPOINT=${MINIO_ENDPOINT}
 MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
 MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
 MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME}
-\\\"@; Set-Content -Path \\\"${DEPLOY_PATH_WINDOWS}\\\\.env\\\" -Value \\\$envContent"'
+EOF
+                                    
+                                    # Encode files to base64 và transfer qua SSH
+                                    echo "Transferring docker-compose.yml..."
+                                    COMPOSE_BASE64=\$(base64 -w 0 docker-compose.prod.yml)
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"\\\$bytes = [System.Convert]::FromBase64String('\${COMPOSE_BASE64}'); [System.IO.File]::WriteAllBytes('${DEPLOY_PATH_WINDOWS}\\\\docker-compose.prod.yml', \\\$bytes)\\\""
+                                    
+                                    echo "Transferring .env file..."
+                                    ENV_BASE64=\$(base64 -w 0 .env.prod)
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"\\\$bytes = [System.Convert]::FromBase64String('\${ENV_BASE64}'); [System.IO.File]::WriteAllBytes('${DEPLOY_PATH_WINDOWS}\\\\.env', \\\$bytes)\\\""
+                                    
+                                    # Clean up
+                                    rm -f .env.prod
                                     
                                     # Deploy containers
                                     echo "Pulling latest images..."
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} 'powershell -Command "cd ${DEPLOY_PATH_WINDOWS}; docker compose -f docker-compose.prod.yml pull"'
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"cd '${DEPLOY_PATH_WINDOWS}'; docker compose -f docker-compose.prod.yml pull\\\""
                                     
                                     echo "Stopping old containers..."
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} 'powershell -Command "cd ${DEPLOY_PATH_WINDOWS}; docker compose -f docker-compose.prod.yml down"'
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"cd '${DEPLOY_PATH_WINDOWS}'; docker compose -f docker-compose.prod.yml down\\\""
                                     
                                     echo "Starting new containers..."
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} 'powershell -Command "cd ${DEPLOY_PATH_WINDOWS}; docker compose -f docker-compose.prod.yml up -d"'
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"cd '${DEPLOY_PATH_WINDOWS}'; docker compose -f docker-compose.prod.yml up -d\\\""
                                     
                                     echo "Container status:"
-                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} 'powershell -Command "cd ${DEPLOY_PATH_WINDOWS}; docker compose -f docker-compose.prod.yml ps"'
+                                    ssh -o StrictHostKeyChecking=no ${DEPLOYMENT_USER}@${DEPLOYMENT_HOST} "powershell -Command \\\"cd '${DEPLOY_PATH_WINDOWS}'; docker compose -f docker-compose.prod.yml ps\\\""
                                     
                                     echo "Deployment completed!"
                                 """
