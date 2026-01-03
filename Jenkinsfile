@@ -3,7 +3,7 @@ pipeline {
     
     environment {
         // Private Docker Registry Configuration
-        DOCKER_REGISTRY = '192.168.123.3:5000'  // Địa chỉ registry riêng
+        DOCKER_REGISTRY = '192.168.123.8:5000'  // Địa chỉ registry riêng
         DOCKER_IMAGE = "${DOCKER_REGISTRY}/do-an-server"
         DOCKER_TAG = "${BUILD_NUMBER}"
         DOCKER_REGISTRY_CREDENTIALS = 'docker-registry-credentials'
@@ -13,7 +13,7 @@ pipeline {
         
         // SSH Deployment Configuration
         SSH_CREDENTIALS = 'ssh-deployment-key'
-        DEPLOYMENT_HOST = '192.168.123.3'  // Thay bằng IP máy deployment của bạn
+        DEPLOYMENT_HOST = '192.168.123.8'  // Thay bằng IP máy deployment của bạn
         DEPLOYMENT_USER = 'deployment-user'  // Thay bằng username deployment
         DEPLOY_PATH = '/c/deployment/do-an-server2'  // Unix-style path cho SSH/SCP từ Linux
         DEPLOY_PATH_WINDOWS = 'C:\\deployment\\do-an-server2'  // Windows path cho PowerShell commands
