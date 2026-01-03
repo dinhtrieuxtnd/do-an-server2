@@ -39,7 +39,7 @@ services:
       retries: 3
 
   app-prod:
-    image: 192.168.123.3:5000/do-an-server:latest  # Pull từ Docker Registry
+    image: 192.168.123.8:5000/do-an-server:latest  # Pull từ Docker Registry
     env_file:
       - .env
     environment:
